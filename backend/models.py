@@ -312,3 +312,31 @@ class KnowledgeEdge(Base):
     relation: Mapped[str] = mapped_column(String(64), default="related_to", nullable=False)
     confidence: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class MobileToken(Base):
+    """A paired phone's bearer credential.
+
+    Only a SHA-256 hash of the token is stored. The raw value is returned once
+    at pairing and kept in the phone's Keychain/Keystore through SecureStore.
+    Revocation is a soft delete so an audit trail remains without retaining a
+    usable credential.
+    """
+
+    __tablename__ = "mobile_tokens"
+    __table_args__ = (
+        Index("ix_mobile_tokens_owner", "owner_id"),
+        Index("ix_mobile_tokens_expiry", "expires_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    device_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+

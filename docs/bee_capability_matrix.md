@@ -31,7 +31,7 @@ owner account was validated against a live Bee device — see
 | Tasks, mark complete | Verified Supported | `PUT /v1/todos/:id` `{completed}` | Bee account token with write access | Implemented (`PATCH /api/tasks/:id`) |
 | Todo suggestions | Verified Supported | `GET /v1/todoSuggestions`, accept/dismiss | Bee account token | Not surfaced |
 | Incremental change feed | Verified Supported | `GET /v1/changes?cursor=...`; cursors older than 7 days → `cursor_too_old` | Bee account token | Implemented, with automatic full re-sync fallback |
-| Real-time event stream (SSE) | Verified Supported | `GET /v1/stream`, event types `new-conversation`, `todo-created`, … | Bee account token | Implemented (`GET /api/stream` proxy) |
+| Real-time event stream (SSE) | Verified Supported | `GET /v1/stream`; docs state at-most-once semantics and no replay of missed events | Bee account token | Implemented (`GET /api/stream` proxy); phone uses foreground polling |
 | Journals / voice notes | Verified Supported | `GET /v1/journals`, `/v1/journals/:id` | Bee account token | Not surfaced |
 | Insights | Verified Supported | `GET /v1/insights` | Bee account token | Not surfaced |
 | Locations | Verified Supported | `/v1/locations/clusters`, `/recent`, `/current` | Bee account token | Not surfaced (daily-summary locations are shown) |
@@ -40,8 +40,13 @@ owner account was validated against a live Bee device — see
 | Threads (chat with the Bee agent) | Requires Permission | `/v1/threads*` — docs state **preview, test users only**; `403 {"error":"test_user_required"}` | Bee test-user enrolment | Deliberately not built; surfaced as unavailable |
 | People / contacts directory | Unsupported | No people/contacts endpoint exists in the reference; people appear only inside facts and transcripts | — | Not implemented by design (no invented endpoint) |
 | Device hardware status (battery, firmware) | Unverified | No documented `/v1` device endpoint found; `bee status` covers CLI authentication only | — | Not shown; UI reports API/account connection instead |
-| Device speaker / audio output control | Unsupported | No documented speaker or playback endpoint | — | Not claimed. Voice playback is browser/server TTS inside this app |
-| Wake-word detection | Unsupported | No documented wake-word or continuous-audio endpoint | — | Disabled; requires a local engine that is not bundled |
+| Device speaker / audio output control | Unsupported | No documented speaker or playback endpoint | — | Not claimed. Playback uses browser or phone TTS; never the Bee speaker |
+| Wake-word detection | Unsupported | No documented wake-word or continuous-audio endpoint | — | Website wake word disabled; Phase 3 offers an optional foreground phone-side OS detector, not Bee |
+| Third-party software installation on Bee | Unsupported | No device SDK, app package format, install command, or firmware interface in the developer docs; public org has only `bee-cli` and `bee-skill` | — | Not attempted; companion runs on the phone |
+| Device microphone / live audio access | Unsupported | `/v1/conversations` returns captured conversations; no live microphone or recording-control endpoint | - | Not attempted; the phone microphone is used for push-to-talk, and only optionally for a foreground on-device wake detector |
+| Bluetooth / Bee audio-route control | Unsupported | No Bluetooth, pairing, volume, or route endpoint | — | Not claimed; phone uses its OS default route |
+| Device background execution | Unsupported | No public third-party app runtime; CLI background streaming runs on a computer | — | Phone app is foreground-only; no background service requested |
+| Phone / SMS / third-party messaging | Unsupported | No messaging or phone-control endpoint in the API reference | — | Not implemented |
 | Meeting recording / device control | Unsupported | No documented recording or device-command endpoint | — | Not claimed. Meetings are generated from authorized stored conversations |
 | Webhooks (inbound) | Unsupported | No webhook API; `bee stream --webhook-endpoint` is a CLI feature | — | Not implemented |
 | Raw TLS + attestation transport | Requires Setup | `https://app-api-developer.ce.bee.amazon.dev` with Bee's private CA | Bee root CA pinned in the client | Not implemented (token and local proxy modes only) |
@@ -79,27 +84,44 @@ rather than assuming success:
 
 ## Verification performed in this repository
 
-* Official pages re-read on 2026-10-23: `/docs`, `/docs/api`, `/docs/sync`,
-  `/docs/realtime`. Every endpoint used by the app appears there.
-* **Backend:** **85** pytest tests pass, covering auth/session security, owner
-  scoping, CSRF, upstream 401/403/`test_user_required`/404/`cursor_too_old`
-  mapping, retry and 429 handling, idempotent full sync, incremental change
-  feed, pagination, deletion mirroring, tombstones, Phase 2 memory/task/meeting/
-  learning/insight/graph behaviour, AI-origin provenance, source-id mapping,
-  export/purge coverage, and the unauthenticated/unconfigured states.
-* **Frontend:** **72** Vitest + React Testing Library tests pass across 18 files,
+* Official pages re-read on 2026-10-23: `/docs`, `/docs/api`,
+  `/docs/developer-mode`, `/docs/cli`, `/docs/mcp`, `/docs/realtime`. Every
+  endpoint used by the app appears there. The public GitHub org contained only
+  `bee-cli` and `bee-skill`.
+* **Backend:** **97** pytest tests pass, covering auth/session security, owner
+  scoping, CSRF, bearer mobile pairing, upstream 401/403/`test_user_required`/
+  404/`cursor_too_old` mapping, retry and 429 handling, idempotent full sync,
+  incremental change feed, pagination, deletion mirroring, tombstones, Phase 2
+  memory/task/meeting/learning/insight/graph behaviour, AI-origin provenance,
+  source-id mapping, export/purge coverage, and the unauthenticated/unconfigured
+  states.
+* **Frontend:** **74** Vitest + React Testing Library tests pass across 18 files,
   covering the auth-gated router, every page's loading/empty/error/retry states,
   task write-through, stale-cache fallback, failed-sync reporting, AI chat and
   retry, voice fallbacks, accepted-candidate provenance, revision plans, data
-  export, and the demo account box.
+  export, the demo account box, paired-phone revocation, and the phone-list failure
+state.
+* **Mobile:** **28** Vitest tests pass across 4 files, covering the companion state
+  machine, cancellation/timeout/retry/mute, API bearer/retry/timeout behaviour,
+  and wake-phrase matching. Real native builds, microphone, Bluetooth, and
+  on-device speech were **not** available.
 * **Runtime:** with no `BEE_TOKEN`, the running Flask app reported
   `configured: false` and `reachable: false`, returned empty data sets, and
   recorded a sync attempt as `failed` with the real reason. It never reported a
   connection or a successful sync.
 * **Database:** `alembic upgrade head` applied `0001_initial` → `0002_phase2` →
-  `0003_learning_revision_plan` to a fresh SQLite database, creating all 12
-  application tables. Existing rows survive the additive migrations.
-* **Not verified:** any request to the live Bee API, live SSE, a real AI
-  provider, a real microphone/speaker, MySQL 8, or Alembic against MySQL. Those
-  require your Bee account, device, provider credentials, and infrastructure.
+  `0003_learning_revision_plan` → `0004_mobile_tokens` to a fresh SQLite database,
+  creating all 13 application tables plus `alembic_version`. Existing rows survive
+  the additive migrations.
+* **Not verified:** any request to the live Bee API, live SSE, a real AI provider,
+  a real microphone/speaker/phone, Bluetooth routing, a native mobile build,
+  battery/performance, MySQL 8, or Alembic against MySQL. Those require a Bee
+  account, device, provider credentials, phone, and infrastructure.
+
+## Phase 3 companion boundary
+
+Phase 3 does not add a Bee device extension. It adds a phone companion over the
+Voice+ server, with optional phone-side on-device wake word and OS audio routing.
+The full device matrix and evidence are in
+[`phase3_device_capability_matrix.md`](phase3_device_capability_matrix.md).
 

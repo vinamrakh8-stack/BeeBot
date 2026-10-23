@@ -5,12 +5,15 @@
 ```
 Browser (React 18 + TypeScript, Vite)
    │  fetch("/api/…")  same-origin, HttpOnly session cookie
+   │
+Phone companion (Expo 58 + React Native + TypeScript)
+   │  HTTPS fetch("/api/…")  Authorization: Bearer <opaque token>
    ▼
 Flask app (backend/app.py)
    ├── routes/            blueprints: auth, bee, conversations, summaries,
    │                      memories, tasks, search, activity, settings, stream,
    │                      overview, assistant, meetings, learning, insights,
-   │                      knowledge_graph, local_search
+   │                      knowledge_graph, local_search, mobile
    ├── services/
    │     bee_client.py     HTTP transport, retries, typed errors
    │     bee_service.py    connection status, account redaction, search
@@ -26,11 +29,11 @@ Flask app (backend/app.py)
    │     learning_service.py learning notes/cards/revision plan generation
    │     insight_service.py  deterministic day/week aggregation
    │     graph_service.py    derived + stored knowledge graph
-   │     rate_limit.py       in-process AI sliding window
+   │     rate_limit.py       in-process AI and mobile-pairing sliding windows
    ├── models.py          SQLAlchemy models
    ├── schemas.py         Pydantic response models
-   ├── security.py        session auth, CSRF guard, operator bootstrap
-   └── migrations/        Alembic (head 0003_learning_revision_plan)
+   ├── security.py        session + bearer auth, CSRF guard, operator bootstrap
+   └── migrations/        Alembic (head 0004_mobile_tokens)
    ▼
 SQLite (default) / MySQL 8 (optional, via DATABASE_URL)
    ▲                         ▲
@@ -62,16 +65,21 @@ In development you can instead run Vite on `:5173`; it proxies `/api` to Flask o
 ## Request lifecycle
 
 1. `enforce_same_origin` (`before_request`) blocks cross-origin mutations on
-   `/api/*` when an `Origin`/`Referer` is present and not allowed.
-2. `login_required` reads `session["uid"]`, loads the operator, and returns
-   `401 {"error":"not_authenticated"}` when absent.
+   `/api/*` when an `Origin`/`Referer` is present and not allowed. A request with
+   an explicit `Authorization: Bearer …` credential is not ambient, so it is not
+   subject to the cookie CSRF guard.
+2. `login_required` accepts either the browser's `session["uid"]` or a valid,
+   unexpired, non-revoked mobile token. If an `Authorization` header is present,
+   it never falls back to a cookie. Missing/invalid auth returns
+   `401 {"error":"not_authenticated"}` (or `mobile_token_required` for the
+   mobile-only endpoints).
 3. The route opens one SQLAlchemy session per request (closed by
    `teardown_appcontext`). Every data query filters on `owner_id`.
 4. Bee calls go through `BeeClient`; AI calls go through `AIClient`. Both map
    upstream failures to typed errors that are serialised without secrets.
 5. Responses are Pydantic models dumped with UTC timestamps (`…Z`).
 6. AI-backed routes call a per-operator sliding-window rate limiter before the
-   provider request.
+   provider request; pairing has a separate per-address limiter.
 
 ## Sync design
 
@@ -85,7 +93,7 @@ In development you can instead run Vite on `:5173`; it proxies `/api` to Flask o
 | Local deletions | Tombstones in `sync_tombstones` stop Bee-sourced facts/todos from being recreated |
 | Failure | Partial upserts are kept (safe to replay); the run is marked `failed`; the cursor does **not** advance |
 | Concurrency | In-process lock → a second concurrent sync gets `409` |
-| Real time | `/api/stream` proxies Bee SSE; the UI debounces refetches. No polling loop |
+| Real time | `/api/stream` proxies Bee SSE; the website debounces refetches. The phone uses foreground polling/manual refresh because Bee SSE is at-most-once and an always-on mobile socket costs battery |
 
 Phase 2 records (meetings, learning sets/items, graph edges) are **local** and are
 not part of Bee sync. They reference Bee data only through stored ids.
@@ -120,8 +128,34 @@ retrieval step without changing the chat contract.
 * Playback uses browser `speechSynthesis` by default, or `/api/assistant/speak`
   when server TTS is configured.
 * Raw audio is not stored. Only the resulting text is returned to the caller.
-* Wake word is disabled: no local engine is bundled and continuous cloud audio is
-  deliberately not used for detection.
+* Wake word on the website is disabled: no local engine is bundled and continuous
+  cloud audio is deliberately not used for detection.
+
+## Mobile companion
+
+`mobile/` is a separate Expo/React Native client:
+
+* Pairing exchanges operator credentials for an opaque `bvp_…` bearer token.
+  Only the SHA-256 hash is stored in `mobile_tokens`; the raw token is held in
+  iOS Keychain / Android Keystore and is never placed in a URL or web storage.
+* The mobile token has the same owner scope as the website session. It can be
+  revoked by the phone or from the website's Settings page.
+* Voice flow: hold-to-record (`expo-audio`, mono 16 kHz AAC, max 15 s) → server
+  STT → server grounded chat → phone TTS. The local recording is deleted after
+  transcription, failure, timeout, or cancellation.
+* The state machine is `disconnected → connected → idle`, then
+  `wake_word_detected/listening → processing → speaking/error`; cancel, retry,
+  mute, timeout, and disconnect are explicit transitions.
+* Wake word is optional and phone-side only. It is enabled only when the OS
+  reports on-device recognition; `requiresOnDeviceRecognition: true` is always
+  set, the Android offline model must be installed, and the app must be in the
+  foreground. It is not available in Expo Go.
+* The app is foreground-only: leaving the app cancels recording, requests, and
+  speech. There is no background service, push notification, continuous cloud
+  audio stream, Bee microphone, Bee speaker, Bluetooth control, or firmware
+  access.
+* Audio output follows the phone's OS route. Bluetooth earbuds/speakers are an OS
+  concern; Bee playback is never claimed.
 
 ## Database
 
@@ -139,15 +173,20 @@ retrieval step without changing the chat contract.
 | `learning_sets` | Notes, goals, revision plan, source conversation, AI flag |
 | `learning_items` | Flashcards/quizzes with review status and counts |
 | `knowledge_edges` | User-confirmed graph relationships; derived edges are computed |
+| `mobile_tokens` | SHA-256 hashes of paired-phone bearer tokens, device names, expiry/revocation timestamps |
 
 Local memories and tasks use negative `bee_id` values so the existing
 `(owner_id, bee_id)` uniqueness contract is preserved. All data tables carry
 `owner_id`. Migrations live in `backend/migrations/` and are managed with
-Alembic (`alembic upgrade head`); `0003_learning_revision_plan` is additive.
+Alembic (`alembic upgrade head`); `0004_mobile_tokens` is additive and leaves
+existing rows untouched.
 
 ## Privacy, export, and deletion
 
-* Bee and AI credentials are server-only and never serialised to the browser.
+* Bee and AI credentials are server-only and never serialised to the browser or
+  phone.
+* Mobile pairing stores only a SHA-256 token hash; the raw token is returned once
+  to the phone and kept in OS secure storage. Pairing passwords are not stored.
 * `GET /api/settings/privacy` counts Phase 1 **and** Phase 2 local records and
   lists every category that is stored.
 * `GET /api/data/export` returns an authenticated, owner-scoped JSON export of
@@ -170,6 +209,8 @@ Alembic (`alembic upgrade head`); `0003_learning_revision_plan` is additive.
   `Badge`, `StatCard`, `Pagination`, `ActivityFeed`, `SourceList`,
   loading/empty/error states.
 * `store.tsx` holds auth state, a refresh token, and the SSE subscription.
+* Settings lists paired phones and can revoke them; the raw token is never shown
+  in the browser.
 * Retrieval mode, AI-configured state, wake-word availability, origin badges,
   `AI-generated` labels, and source links are shown explicitly so generated or
   assistant-produced content is never mistaken for Bee data.
@@ -177,6 +218,16 @@ Alembic (`alembic upgrade head`); `0003_learning_revision_plan` is additive.
   `aria-live` chat/voice status, visible focus rings, reduced-motion support.
 * Responsive: CSS grid shell; the sidebar becomes an off-canvas drawer under
   900px; tables scroll horizontally.
+
+## Mobile app
+
+* Tabs: Talk, Conversations, Tasks, Summaries, Settings.
+* Pairing screen, session bootstrap, visible connection pill, answer/source card,
+  local wake-word toggle, data deletion, and token revocation.
+* Foreground-only; no background tasks. The Talk screen polls the server overview
+  every 60 s while visible; other screens load on open.
+* The phone uses its OS microphone/speaker/Bluetooth route and never accesses Bee
+  hardware or firmware.
 
 ## Deliberate boundaries
 
@@ -190,3 +241,7 @@ Alembic (`alembic upgrade head`); `0003_learning_revision_plan` is additive.
 * No background push notifications: reminders are foreground browser
   notifications only.
 * No external calendar writes or third-party messaging.
+* No Bee firmware, microphone, speaker, Bluetooth, wake-word, or background
+  execution interface is used by the phone. The phone is a separate Voice+ client.
+* No continuous cloud audio and no background listening. Wake word is optional,
+  local-only, and foreground-only.

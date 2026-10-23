@@ -16,6 +16,7 @@ from routes import (
     local_search,
     meetings,
     memories,
+    mobile,
     overview,
     search,
     settings,
@@ -28,6 +29,7 @@ from routes import (
 def register_blueprints(app: Flask) -> None:
     for module in (
         auth,
+        mobile,
         overview,
         conversations,
         summaries,

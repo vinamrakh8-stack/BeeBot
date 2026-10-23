@@ -19,6 +19,13 @@ frontend/.vite/
 frontend/coverage/
 *.tsbuildinfo
 
+# expo mobile (generated)
+mobile/.expo/
+mobile/dist/
+mobile/coverage/
+mobile/android/
+mobile/ios/
+
 # local data
 *.sqlite3
 *.db

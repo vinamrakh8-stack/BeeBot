@@ -107,3 +107,48 @@ def test_migration_0003_adds_revision_plan_without_data_loss(tmp_path):
             "SELECT title, notes, revision_plan FROM learning_sets"
         ).fetchone()
         assert stored == ("Indexes", "Existing notes", None)
+
+
+def test_migration_0004_adds_mobile_tokens_without_data_loss(tmp_path):
+    db_path = tmp_path / "mobile.db"
+    upgraded = _run_alembic(db_path, "upgrade", "0003_learning_revision_plan")
+    assert upgraded.returncode == 0, upgraded.stderr
+
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "INSERT INTO users (username, password_hash, display_name, created_at) "
+            "VALUES ('operator', 'hash', 'Operator', '2026-01-01 00:00:00')"
+        )
+        connection.execute(
+            "INSERT INTO facts (owner_id, bee_id, text, confirmed, synced_at) "
+            "VALUES (1, 42, 'Existing memory', 1, '2026-01-01 00:00:00')"
+        )
+        connection.commit()
+
+    head = _run_alembic(db_path, "upgrade", "head")
+    assert head.returncode == 0, head.stderr
+
+    with sqlite3.connect(db_path) as connection:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        assert "mobile_tokens" in tables
+
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(mobile_tokens)")
+        }
+        assert {
+            "owner_id",
+            "token_hash",
+            "device_name",
+            "expires_at",
+            "revoked_at",
+        } <= columns
+
+        fact = connection.execute(
+            "SELECT text FROM facts WHERE bee_id = 42"
+        ).fetchone()
+        assert fact == ("Existing memory",)

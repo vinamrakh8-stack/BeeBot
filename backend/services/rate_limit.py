@@ -14,9 +14,15 @@ from api_utils import ApiError
 
 
 class RateLimiter:
-    def __init__(self, limit: int, window_seconds: float = 60.0) -> None:
+    def __init__(
+        self,
+        limit: int,
+        window_seconds: float = 60.0,
+        message: str = "Too many requests. Try again in about {seconds} seconds.",
+    ) -> None:
         self.limit = max(1, int(limit))
         self.window_seconds = float(window_seconds)
+        self.message = message
         self._events: dict[str, deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()
 
@@ -30,7 +36,7 @@ class RateLimiter:
             if len(events) >= self.limit:
                 retry_after = max(1, int(events[0] + self.window_seconds - now) + 1)
                 raise ApiError(
-                    f"Too many AI requests. Try again in about {retry_after} seconds.",
+                    self.message.replace("{seconds}", str(retry_after)),
                     status=429,
                     code="rate_limited",
                     headers={"Retry-After": str(retry_after)},

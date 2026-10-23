@@ -72,7 +72,14 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.extensions["bee_client"] = bee_client
     app.extensions["bee_sync_lock"] = threading.Lock()
     app.extensions["ai_client"] = ai_client
-    app.extensions["ai_limiter"] = RateLimiter(settings.ai_rate_limit_per_minute)
+    app.extensions["ai_limiter"] = RateLimiter(
+        settings.ai_rate_limit_per_minute,
+        message="Too many AI requests. Try again in about {seconds} seconds.",
+    )
+    app.extensions["mobile_pair_limiter"] = RateLimiter(
+        settings.mobile_pair_rate_limit_per_minute,
+        message="Too many pairing attempts. Try again in about {seconds} seconds.",
+    )
 
     # Production schema changes go through Alembic; dev/test get a convenience
     # create_all so a fresh checkout runs immediately.
@@ -140,7 +147,7 @@ def create_app(settings: Settings | None = None) -> Flask:
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Credentials"] = "true"
             response.headers["Vary"] = "Origin"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Accept"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Accept, Authorization"
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
         return response
 

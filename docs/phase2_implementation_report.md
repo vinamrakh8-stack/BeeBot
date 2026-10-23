@@ -1,5 +1,10 @@
 # Phase 2 Implementation Report — Bee Voice+
 
+> Historical snapshot: these counts, migration head, and table count describe
+> Phase 2 only. Phase 3 adds `0004_mobile_tokens`; see
+> [`phase3_implementation_report.md`](phase3_implementation_report.md) for current
+> results.
+
 Date: 2026-10-23
 Status: implemented and verified locally
 Scope: audit and completion pass over the existing Phase 2 codebase

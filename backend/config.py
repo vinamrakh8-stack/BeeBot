@@ -80,6 +80,12 @@ class Settings(BaseSettings):
     wake_word_phrase: str = "Hey Bee"
     wake_word_engine: Literal["disabled", "browser_cloud"] = "disabled"
 
+    # Mobile companion pairing. Tokens are opaque bearer credentials stored
+    # hashed in the database; the raw token is shown once and kept in the
+    # phone's OS secure storage.
+    mobile_token_ttl_days: int = Field(default=90, ge=1, le=365)
+    mobile_pair_rate_limit_per_minute: int = Field(default=5, ge=1, le=100)
+
     @field_validator("bee_api_base_url", "bee_proxy_url")
     @classmethod
     def _strip_slash(cls, value: str) -> str:

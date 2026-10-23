@@ -4,7 +4,14 @@ import { ErrorBanner, LoadingBlock } from "../components/States";
 import { Badge, Card, MetaRow } from "../components/ui";
 import { formatDateTime, relativeTime, titleCase } from "../lib/format";
 import { useApp, useReloadEffect } from "../store";
-import type { AssistantStatus, Connection, DeleteResult, PrivacySummary, SyncRun } from "../types";
+import type {
+  AssistantStatus,
+  Connection,
+  DeleteResult,
+  MobileDevice,
+  PrivacySummary,
+  SyncRun,
+} from "../types";
 
 export default function Settings() {
   const { live, refresh } = useApp();
@@ -12,6 +19,9 @@ export default function Settings() {
   const [assistant, setAssistant] = useState<AssistantStatus | null>(null);
   const [runs, setRuns] = useState<SyncRun[]>([]);
   const [privacy, setPrivacy] = useState<PrivacySummary | null>(null);
+  const [devices, setDevices] = useState<MobileDevice[]>([]);
+  const [devicesError, setDevicesError] = useState<string | null>(null);
+  const [revokingId, setRevokingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -39,9 +49,21 @@ export default function Settings() {
     }
   }, []);
 
+  const loadDevices = useCallback(async () => {
+    setDevicesError(null);
+    try {
+      setDevices(await api.get<MobileDevice[]>("/api/mobile/devices"));
+    } catch (caught) {
+      // Do not claim "no phone is paired" when the request itself failed.
+      setDevices([]);
+      setDevicesError(errorMessage(caught));
+    }
+  }, []);
+
   useReloadEffect(() => {
     void load();
-  }, [load]);
+    void loadDevices();
+  }, [load, loadDevices]);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,6 +152,22 @@ export default function Settings() {
       setActionError(errorMessage(caught));
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function revokeDevice(device: MobileDevice) {
+    if (!window.confirm(`Revoke the paired phone "${device.device_name}"?`)) return;
+    setRevokingId(device.id);
+    setActionError(null);
+    setNotice(null);
+    try {
+      await api.del(`/api/mobile/devices/${device.id}`);
+      setNotice(`Revoked ${device.device_name}.`);
+      await loadDevices();
+    } catch (caught) {
+      setActionError(errorMessage(caught));
+    } finally {
+      setRevokingId(null);
     }
   }
 
@@ -350,6 +388,54 @@ export default function Settings() {
             </table>
           </div>
         )}
+      </Card>
+
+      <Card
+        title="Mobile companion"
+        subtitle="Phones pair with this operator account and receive an opaque token. Revoking a device signs it out on its next request; only a token hash is stored on the server."
+      >
+        {devicesError ? (
+          <div className="inline-alert" role="alert">
+            Paired phones could not be loaded: {devicesError}
+            <button type="button" className="button ghost small" onClick={() => void loadDevices()}>
+              Retry
+            </button>
+          </div>
+        ) : null}
+        {devicesError ? null : devices.length === 0 ? (
+          <p className="muted">
+            No phone is paired. Run the companion app (<code>mobile/</code>) and pair it
+            with this server.
+          </p>
+        ) : (
+          <ul className="plain-list">
+            {devices.map((device) => (
+              <li key={device.id}>
+                <span>
+                  <strong>{device.device_name}</strong>
+                  <span className="muted small">
+                    {" "}
+                    · paired {formatDateTime(device.created_at)} · last used{" "}
+                    {device.last_used_at ? relativeTime(device.last_used_at) : "never"} · expires{" "}
+                    {formatDateTime(device.expires_at)}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className="button danger small"
+                  onClick={() => void revokeDevice(device)}
+                  disabled={revokingId === device.id}
+                >
+                  {revokingId === device.id ? "Revoking…" : "Revoke"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="muted small">
+          The phone never receives the Bee token or AI key. It sends the question to this
+          server, which applies the same owner scoping as the website.
+        </p>
       </Card>
 
       <Card title="Privacy and data retention">

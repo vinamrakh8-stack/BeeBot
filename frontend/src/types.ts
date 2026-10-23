@@ -177,6 +177,15 @@ export interface DeleteResult {
   message: string;
 }
 
+export interface MobileDevice {
+  id: number;
+  device_name: string;
+  created_at: string;
+  last_used_at?: string | null;
+  expires_at: string;
+  revoked_at?: string | null;
+}
+
 /* ------------------------------------------------------------- Phase 2 AI */
 
 export interface WakeWordStatus {

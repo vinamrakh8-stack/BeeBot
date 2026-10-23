@@ -7,19 +7,13 @@ from flask import Blueprint, g, jsonify, session
 from api_utils import ApiError, dump, json_body
 from schemas import UserOut
 from security import (
+    authenticate_operator,
     get_db,
     get_settings,
-    hash_password,
     login_required,
-    operator_exists,
-    verify_password,
 )
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
-
-# Verified against when the username is unknown, so a miss costs about the same
-# time as a wrong password.
-DUMMY_HASH = hash_password("dummy-password-for-timing-only")
 
 
 @bp.get("/demo")
@@ -74,11 +68,9 @@ def login():
         raise ApiError("Username and password are required.", code="invalid_credentials")
 
     db = get_db()
-    user = operator_exists(db, username)
-    stored_hash = user.password_hash if user and user.password_hash else DUMMY_HASH
-    password_ok = verify_password(password, stored_hash)
+    user = authenticate_operator(db, username, password)
 
-    if user is None or not password_ok:
+    if user is None:
         return (
             jsonify({"error": "invalid_credentials", "message": "Invalid username or password"}),
             401,

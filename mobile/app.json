@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Bee Voice+ Companion",
+    "slug": "bee-voice-plus-companion",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "beevoiceplus",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.beevoiceplus.companion",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Bee Voice+ uses the microphone only while you hold Talk or when you enable the optional on-device wake word.",
+        "NSSpeechRecognitionUsageDescription": "Bee Voice+ can use the operating system's on-device speech recognizer for the optional wake word. Audio is not sent to the Voice+ server for wake-word detection."
+      }
+    },
+    "android": {
+      "package": "com.beevoiceplus.companion",
+      "permissions": [
+        "RECORD_AUDIO",
+        "INTERNET"
+      ]
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Bee Voice+ to use the microphone for push-to-talk and the optional on-device wake word.",
+          "speechRecognitionPermission": "Allow Bee Voice+ to use the operating system speech recognizer for the optional on-device wake word.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.as"
+          ]
+        }
+      ],
+      "expo-asset"
+    ]
+  }
+}

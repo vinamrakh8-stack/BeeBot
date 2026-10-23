@@ -30,6 +30,15 @@ class UserOut(ApiModel):
     display_name: str | None = None
 
 
+class MobileDeviceOut(ApiModel):
+    id: int
+    device_name: str
+    created_at: Utc
+    last_used_at: Utc | None = None
+    expires_at: Utc
+    revoked_at: Utc | None = None
+
+
 class ConversationOut(ApiModel):
     id: int | None = None
     bee_id: int
