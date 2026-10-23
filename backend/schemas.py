@@ -71,6 +71,7 @@ class FactOut(ApiModel):
     origin: str = "bee"
     source_kind: str | None = None
     source_conversation_id: int | None = None
+    source_conversation_bee_id: int | None = None
     source_excerpt: str | None = None
     ai_generated: bool = False
     created_at: Utc | None = None
@@ -87,6 +88,7 @@ class TodoOut(ApiModel):
     alarm_at: Utc | None = None
     origin: str = "bee"
     source_conversation_id: int | None = None
+    source_conversation_bee_id: int | None = None
     source_excerpt: str | None = None
     due_at: Utc | None = None
     postponed_until: Utc | None = None
@@ -166,6 +168,7 @@ class LearningSetOut(ApiModel):
     conversation_bee_id: int | None = None
     notes: str | None = None
     goals: list[Any] | None = None
+    revision_plan: list[Any] | None = None
     ai_generated: bool = False
     created_at: Utc
     updated_at: Utc

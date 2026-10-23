@@ -25,6 +25,10 @@ from models import (
     Conversation,
     DailySummary,
     Fact,
+    KnowledgeEdge,
+    LearningItem,
+    LearningSet,
+    Meeting,
     SyncRun,
     SyncState,
     SyncTombstone,
@@ -378,9 +382,26 @@ def run_sync(
 
 
 def purge_synced_data(db: Session, owner_id: int) -> dict[str, int]:
-    """Delete the local mirror only. Bee itself is never modified."""
+    """Delete this operator's local data only. Bee itself is never modified.
+
+    Phase 2 records (meetings, learning sets/items, confirmed graph edges) are
+    included so "delete local data" means everything this app stored, not just
+    the Phase 1 mirror. Tombstones are removed with it: a later sync may then
+    recreate Bee-owned rows, which is the behaviour the UI documents.
+    """
     deleted: dict[str, int] = {}
+
+    # Children before parents; SQLite and MySQL both accept the subquery form.
+    owner_sets = select(LearningSet.id).where(LearningSet.owner_id == owner_id)
+    learning_items = db.execute(
+        delete(LearningItem).where(LearningItem.set_id.in_(owner_sets))
+    )
+    deleted["learning_items"] = int(learning_items.rowcount or 0)
+
     for name, model in (
+        ("knowledge_edges", KnowledgeEdge),
+        ("learning_sets", LearningSet),
+        ("meetings", Meeting),
         ("conversations", Conversation),
         ("daily_summaries", DailySummary),
         ("memories", Fact),
@@ -389,8 +410,15 @@ def purge_synced_data(db: Session, owner_id: int) -> dict[str, int]:
         result = db.execute(delete(model).where(model.owner_id == owner_id))
         deleted[name] = int(result.rowcount or 0)
 
-    db.execute(delete(SyncRun).where(SyncRun.owner_id == owner_id))
+    deleted["sync_runs"] = int(
+        db.execute(delete(SyncRun).where(SyncRun.owner_id == owner_id)).rowcount or 0
+    )
     db.execute(delete(SyncState).where(SyncState.owner_id == owner_id))
-    db.execute(delete(SyncTombstone).where(SyncTombstone.owner_id == owner_id))
+    deleted["tombstones"] = int(
+        db.execute(
+            delete(SyncTombstone).where(SyncTombstone.owner_id == owner_id)
+        ).rowcount
+        or 0
+    )
     db.commit()
     return deleted

@@ -172,10 +172,14 @@ def retrieve(
 ) -> list[ContextSource]:
     """Return the most relevant owner-scoped records for a query.
 
-    Empty queries return recent records so the UI can still show what context is
-    available. A record is never returned for another owner.
+    A truly empty query returns recent records so browsing still works. A
+    non-empty query that contains no searchable terms (for example ``???``)
+    returns nothing: returning recent records would ground an answer on
+    unrelated data. A record is never returned for another owner.
     """
     terms = tokenize(query)
+    if query.strip() and not terms:
+        return []
     allowed = (kinds or _KINDS) & _KINDS
     results: list[ContextSource] = []
 

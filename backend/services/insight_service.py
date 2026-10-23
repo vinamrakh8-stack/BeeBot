@@ -22,6 +22,7 @@ from models import (
     utcnow,
 )
 from schemas import ConversationOut, DailySummaryOut, InsightsOut, TodoOut
+from services.source_service import conversation_bee_ids
 
 
 def period_range(period: str, anchor: date) -> tuple[datetime, datetime, datetime, datetime]:
@@ -253,19 +254,24 @@ def build_insights(
                     }
                 )
 
+    # Conversation links must use the Bee id; task rows store the local id.
+    task_source_bee_ids = conversation_bee_ids(
+        db, owner_id, [task.source_conversation_id for task in pending_tasks]
+    )
     for task in pending_tasks:
         if task.due_at is None:
             continue
+        source_bee_id = (
+            task_source_bee_ids.get(task.source_conversation_id)
+            if task.source_conversation_id is not None
+            else None
+        )
         commitments.append(
             {
                 "text": task.text,
                 "due_at": task.due_at.isoformat(timespec="seconds") + "Z",
                 "task_bee_id": task.bee_id,
-                "route": (
-                    f"/conversations/{task.source_conversation_id}"
-                    if task.source_conversation_id
-                    else "/tasks"
-                ),
+                "route": f"/conversations/{source_bee_id}" if source_bee_id else "/tasks",
                 "source": "task",
             }
         )

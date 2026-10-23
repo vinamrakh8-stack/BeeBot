@@ -6,6 +6,8 @@ calls Bee or another network service.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -39,6 +41,27 @@ def get_conversation_by_bee_id(
     if row is None:
         raise ApiError("Conversation not found.", status=404, code="not_found")
     return row
+
+
+def conversation_bee_ids(
+    db: Session, owner_id: int, local_ids: Iterable[int | None]
+) -> dict[int, int]:
+    """Map local conversation ids to Bee conversation ids for this owner.
+
+    Local records store the surrogate key in ``source_conversation_id`` while
+    every conversation route uses the Bee id. One batched lookup keeps list
+    endpoints free of per-row queries.
+    """
+    ids = {int(value) for value in local_ids if isinstance(value, int)}
+    if not ids:
+        return {}
+    rows = db.execute(
+        select(Conversation.id, Conversation.bee_id).where(
+            Conversation.owner_id == owner_id,
+            Conversation.id.in_(ids),
+        )
+    ).all()
+    return {int(local): int(bee) for local, bee in rows}
 
 
 def conversation_text(conversation: Conversation, *, max_chars: int = 14_000) -> str:

@@ -1,7 +1,10 @@
 # Phase 2 Implementation Plan — Bee Voice+
 
 Date: 2026-10-23
-Status: implementation plan (written before code changes)
+Status: implemented; results in
+[`phase2_implementation_report.md`](phase2_implementation_report.md). This file
+is kept as the pre-implementation plan, with an addendum at the end for work
+added during the verification pass.
 
 ## 1. Current architecture (Phase 1, inspected)
 
@@ -198,3 +201,23 @@ voices, OS audio routing/Bluetooth, Bee account/device sync, real AI provider.
 - Server-push notifications (browser notifications are used only while the tab is
   open and permitted).
 - Creating external calendar events or messaging third parties.
+
+## 14. Addendum added during the verification pass
+
+The plan above was implemented before this audit. The pass that produced the
+report added:
+
+- Migration `0003_learning_revision_plan` and an editable revision plan on
+  learning sets.
+- `source_conversation_bee_id` in memory/task responses, with source links and
+  correct Bee-id routes in Insights commitments.
+- `origin`/`ai_generated` acceptance on create, so accepted extraction
+  candidates are stored as AI data rather than relabelled as user data.
+- No-evidence handling for queries that tokenise to nothing (`???`).
+- `GET /api/data/export`, Phase 2 privacy counts, and Phase 2-aware purge.
+- Phase 2 counts on the overview and a working chat retry.
+- 8 backend and 5 frontend regression tests for the above.
+
+Final measured results: 85 backend tests, 72 frontend tests across 18 files,
+TypeScript exit 0, production build exit 0, Alembic head
+`0003_learning_revision_plan` on fresh SQLite.

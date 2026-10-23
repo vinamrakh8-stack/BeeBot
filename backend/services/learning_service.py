@@ -13,6 +13,7 @@ Return strict JSON:
 {
   "notes": "structured study notes in Markdown",
   "goals": ["..."],
+  "revision_plan": ["Day 1: review the notes (20 minutes)"],
   "flashcards": [{"question":"...","answer":"...","explanation":"..."}],
   "quiz": [{"question":"...","answer":"...","explanation":"..."}]
 }
@@ -22,7 +23,9 @@ Rules:
   be mistaken for something the conversation said.
 - Keep notes structured and traceable to the source. Do not fabricate quotes.
 - Flashcards and quiz answers must be directly supported by the text.
-- Return at most 12 flashcards and 10 quiz questions.
+- `revision_plan` is a short ordered study schedule. Each entry names a day or
+  step and what to review. Do not promise outcomes or invent deadlines.
+- Return at most 12 flashcards, 10 quiz questions, and 8 plan steps.
 - If the text is too thin, return fewer items and explain the gap in `notes`."""
 
 
@@ -85,6 +88,7 @@ def generate_learning(ai: AIClient, conversation: Conversation) -> dict:
     return {
         "notes": _clean_text(result.get("notes"), maximum=20_000),
         "goals": _clean_strings(result.get("goals")),
+        "revision_plan": _clean_strings(result.get("revision_plan"), maximum=8),
         "flashcards": _clean_items(result.get("flashcards"), maximum=12),
         "quiz": _clean_items(result.get("quiz"), maximum=10),
     }

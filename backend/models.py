@@ -253,6 +253,9 @@ class LearningSet(Base):
     conversation_bee_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     goals: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Ordered, plain-language study schedule. Stored as JSON strings so the plan
+    # can be edited in the UI without a second table.
+    revision_plan: Mapped[list | None] = mapped_column(JSON, nullable=True)
     ai_generated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

@@ -10,7 +10,15 @@ from __future__ import annotations
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy import func, select
 
-from api_utils import ApiError, dump, json_body, page_payload, pagination, path_int
+from api_utils import (
+    ApiError,
+    dump,
+    json_body,
+    page_payload,
+    pagination,
+    path_int,
+    provenance,
+)
 from models import Fact, utcnow
 from schemas import FactOut
 from security import (
@@ -26,7 +34,11 @@ from services.memory_service import (
     next_local_bee_id,
     normalize_text,
 )
-from services.source_service import get_conversation, get_conversation_by_bee_id
+from services.source_service import (
+    conversation_bee_ids,
+    get_conversation,
+    get_conversation_by_bee_id,
+)
 
 bp = Blueprint("memories", __name__, url_prefix="/api/memories")
 
@@ -72,8 +84,29 @@ def _get_fact(bee_id: int) -> Fact:
     return row
 
 
-def _serialize(row: Fact) -> dict:
-    return dump(FactOut.model_validate(row))
+def _serialize_many(db, owner_id: int, rows: list[Fact]) -> list[dict]:
+    """Serialise memories with the Bee id of their source conversation.
+
+    Local records store the surrogate conversation id; the UI needs the Bee id
+    to link back to the `/conversations/:beeId` route.
+    """
+    bee_ids = conversation_bee_ids(
+        db, owner_id, [row.source_conversation_id for row in rows]
+    )
+    payloads: list[dict] = []
+    for row in rows:
+        payload = dump(FactOut.model_validate(row))
+        payload["source_conversation_bee_id"] = (
+            bee_ids.get(row.source_conversation_id)
+            if row.source_conversation_id is not None
+            else None
+        )
+        payloads.append(payload)
+    return payloads
+
+
+def _serialize(db, owner_id: int, row: Fact) -> dict:
+    return _serialize_many(db, owner_id, [row])[0]
 
 
 @bp.get("")
@@ -121,7 +154,11 @@ def list_memories():
         .all()
     )
 
-    return jsonify(page_payload([FactOut.model_validate(row) for row in rows], total, limit, offset))
+    return jsonify(
+        page_payload(
+            _serialize_many(db, g.current_user.id, list(rows)), total, limit, offset
+        )
+    )
 
 
 @bp.post("")
@@ -134,6 +171,7 @@ def create_memory():
     confirmed = body.get("confirmed", True)
     if not isinstance(confirmed, bool):
         raise ApiError("`confirmed` must be a boolean.", code="invalid_parameter")
+    origin, ai_generated = provenance(body)
 
     source_conversation_id = body.get("source_conversation_id")
     if source_conversation_id is not None and not isinstance(source_conversation_id, int):
@@ -163,11 +201,11 @@ def create_memory():
         text=text,
         tags=tags or None,
         confirmed=confirmed,
-        origin="user",
+        origin=origin,
         source_kind="conversation" if source_conversation_id else "manual",
         source_conversation_id=source_conversation_id,
         source_excerpt=source_excerpt,
-        ai_generated=False,
+        ai_generated=ai_generated,
         created_at=utcnow(),
         updated_at=utcnow(),
         synced_at=utcnow(),
@@ -175,7 +213,7 @@ def create_memory():
     db.add(row)
     db.commit()
     db.refresh(row)
-    return jsonify(_serialize(row)), 201
+    return jsonify(_serialize(db, g.current_user.id, row)), 201
 
 
 @bp.patch("/<bee_id>")
@@ -218,7 +256,7 @@ def update_memory(bee_id: str):
     row.updated_at = utcnow()
     db.commit()
     db.refresh(row)
-    return jsonify(_serialize(row))
+    return jsonify(_serialize(db, g.current_user.id, row))
 
 
 @bp.delete("/<bee_id>")

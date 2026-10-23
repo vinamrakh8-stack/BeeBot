@@ -17,6 +17,7 @@ from api_utils import (
     page_payload,
     parse_datetime,
     path_int,
+    provenance,
 )
 from models import Todo, utcnow
 from schemas import TodoOut
@@ -30,7 +31,11 @@ from security import (
 )
 from services.memory_service import add_tombstone, next_local_bee_id
 from services.normalize import todo_values
-from services.source_service import get_conversation, get_conversation_by_bee_id
+from services.source_service import (
+    conversation_bee_ids,
+    get_conversation,
+    get_conversation_by_bee_id,
+)
 from services.task_service import (
     extract_candidates,
     find_duplicate,
@@ -64,13 +69,38 @@ def _get_todo(bee_id: int) -> Todo:
     return row
 
 
-def _duplicate_response(existing: Todo):
+def _serialize_many(db, owner_id: int, rows: list[Todo]) -> list[dict]:
+    """Serialise tasks with the Bee id of their source conversation.
+
+    Task rows store a local conversation id, but conversation routes use Bee
+    ids. Emitting the Bee id lets the UI link to the right conversation.
+    """
+    bee_ids = conversation_bee_ids(
+        db, owner_id, [row.source_conversation_id for row in rows]
+    )
+    payloads: list[dict] = []
+    for row in rows:
+        payload = dump(TodoOut.model_validate(row))
+        payload["source_conversation_bee_id"] = (
+            bee_ids.get(row.source_conversation_id)
+            if row.source_conversation_id is not None
+            else None
+        )
+        payloads.append(payload)
+    return payloads
+
+
+def _serialize(db, owner_id: int, row: Todo) -> dict:
+    return _serialize_many(db, owner_id, [row])[0]
+
+
+def _duplicate_response(db, owner_id: int, existing: Todo):
     return (
         jsonify(
             {
                 "error": "duplicate_task",
                 "message": "An equivalent task already exists.",
-                "existing": dump(TodoOut.model_validate(existing)),
+                "existing": _serialize(db, owner_id, existing),
             }
         ),
         409,
@@ -129,7 +159,9 @@ def list_tasks():
     )
 
     return jsonify(
-        page_payload([TodoOut.model_validate(row) for row in rows], total, limit, offset)
+        page_payload(
+            _serialize_many(db, g.current_user.id, list(rows)), total, limit, offset
+        )
     )
 
 
@@ -142,6 +174,7 @@ def create_task():
     completed = body.get("completed", False)
     if not isinstance(completed, bool):
         raise ApiError("`completed` must be a boolean.", code="invalid_parameter")
+    origin, ai_generated = provenance(body)
 
     due_at = parse_datetime(body.get("due_at"), "due_at")
     source_conversation_id = body.get("source_conversation_id")
@@ -168,18 +201,18 @@ def create_task():
     dedupe_key = make_dedupe_key(source_conversation_id, text)
     existing = find_duplicate(db, g.current_user.id, dedupe_key)
     if existing is not None:
-        return _duplicate_response(existing)
+        return _duplicate_response(db, g.current_user.id, existing)
 
     row = Todo(
         owner_id=g.current_user.id,
         bee_id=next_local_bee_id(db, Todo, g.current_user.id),
         text=text,
         completed=completed,
-        origin="user",
+        origin=origin,
         source_conversation_id=source_conversation_id,
         source_excerpt=source_excerpt,
         due_at=due_at,
-        ai_generated=False,
+        ai_generated=ai_generated,
         dedupe_key=dedupe_key,
         approved=True,
         created_at=utcnow(),
@@ -189,7 +222,7 @@ def create_task():
     db.add(row)
     db.commit()
     db.refresh(row)
-    return jsonify(dump(TodoOut.model_validate(row))), 201
+    return jsonify(_serialize(db, g.current_user.id, row)), 201
 
 
 @bp.post("/extract")
@@ -280,7 +313,7 @@ def update_task(bee_id: str):
         row.synced_at = utcnow()
         db.commit()
         db.refresh(row)
-        return jsonify(dump(TodoOut.model_validate(row)))
+        return jsonify(_serialize(db, g.current_user.id, row))
 
     # Any other edit of a Bee task becomes a local correction; tombstone the Bee
     # id so the next sync does not overwrite it.
@@ -315,12 +348,12 @@ def update_task(bee_id: str):
             db, g.current_user.id, row.dedupe_key, exclude_bee_id=row.bee_id
         )
         if duplicate is not None:
-            return _duplicate_response(duplicate)
+            return _duplicate_response(db, g.current_user.id, duplicate)
 
     row.updated_at = utcnow()
     db.commit()
     db.refresh(row)
-    return jsonify(dump(TodoOut.model_validate(row)))
+    return jsonify(_serialize(db, g.current_user.id, row))
 
 
 @bp.delete("/<bee_id>")

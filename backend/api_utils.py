@@ -65,6 +65,28 @@ def dump(model: BaseModel) -> dict[str, Any]:
     return model.model_dump(mode="json")
 
 
+def provenance(body: dict) -> tuple[str, bool]:
+    """Resolve local provenance for a created memory or task.
+
+    Client-supplied records may only be ``user`` (typed/edited by the operator)
+    or ``ai`` (an accepted extraction candidate). ``bee`` rows are created by
+    sync only, so claiming it here would misrepresent the data.
+    """
+    origin = body.get("origin", "user")
+    if origin not in {"user", "ai"}:
+        raise ApiError("`origin` must be `user` or `ai`.", code="invalid_parameter")
+
+    ai_generated = body.get("ai_generated", origin == "ai")
+    if not isinstance(ai_generated, bool):
+        raise ApiError("`ai_generated` must be a boolean.", code="invalid_parameter")
+
+    if origin == "ai":
+        ai_generated = True
+    elif ai_generated:
+        origin = "ai"
+    return origin, ai_generated
+
+
 def parse_datetime(value: Any, field: str) -> Any:
     """Parse an optional ISO-8601 datetime into naive UTC.
 
@@ -98,9 +120,9 @@ def path_int(value: str, field: str = "id") -> int:
         ) from None
 
 
-def page_payload(items: list[BaseModel], total: int, limit: int, offset: int) -> dict:
+def page_payload(items: list[BaseModel] | list[dict], total: int, limit: int, offset: int) -> dict:
     return {
-        "items": [dump(item) for item in items],
+        "items": [item if isinstance(item, dict) else dump(item) for item in items],
         "total": total,
         "limit": limit,
         "offset": offset,

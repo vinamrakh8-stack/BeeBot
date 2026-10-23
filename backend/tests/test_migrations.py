@@ -75,3 +75,35 @@ def test_migration_0002_preserves_existing_rows(tmp_path):
             row[1] for row in connection.execute("PRAGMA table_info(facts)")
         }
         assert {"origin", "source_conversation_id", "deleted_at"} <= fact_columns
+
+
+def test_migration_0003_adds_revision_plan_without_data_loss(tmp_path):
+    db_path = tmp_path / "learning.db"
+    upgraded = _run_alembic(db_path, "upgrade", "0002_phase2")
+    assert upgraded.returncode == 0, upgraded.stderr
+
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "INSERT INTO users (username, password_hash, display_name, created_at) "
+            "VALUES ('operator', 'hash', 'Operator', '2026-01-01 00:00:00')"
+        )
+        connection.execute(
+            "INSERT INTO learning_sets "
+            "(owner_id, title, source_kind, notes, ai_generated, created_at, updated_at) "
+            "VALUES (1, 'Indexes', 'manual', 'Existing notes', 0, "
+            "'2026-01-01 00:00:00', '2026-01-01 00:00:00')"
+        )
+        connection.commit()
+
+    head = _run_alembic(db_path, "upgrade", "head")
+    assert head.returncode == 0, head.stderr
+
+    with sqlite3.connect(db_path) as connection:
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(learning_sets)")
+        }
+        assert "revision_plan" in columns
+        stored = connection.execute(
+            "SELECT title, notes, revision_plan FROM learning_sets"
+        ).fetchone()
+        assert stored == ("Indexes", "Existing notes", None)

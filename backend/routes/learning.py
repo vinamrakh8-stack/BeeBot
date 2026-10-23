@@ -53,6 +53,25 @@ def _clean_goals(value) -> list[str]:
     return out
 
 
+def _clean_revision_plan(value) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ApiError("`revision_plan` must be a list of strings.", code="invalid_parameter")
+    out: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise ApiError(
+                "`revision_plan` must be a list of strings.", code="invalid_parameter"
+            )
+        text = item.strip()[:300]
+        if text and text not in out:
+            out.append(text)
+        if len(out) >= 14:
+            break
+    return out
+
+
 def _get_set(set_id: int) -> LearningSet:
     row = get_db().execute(
         select(LearningSet).where(
@@ -152,6 +171,7 @@ def create_set():
     body = json_body()
     title = _clean_text(body.get("title"), "title", maximum=255)
     goals = _clean_goals(body.get("goals"))
+    revision_plan = _clean_revision_plan(body.get("revision_plan"))
     notes = _clean_text(body.get("notes"), "notes", maximum=20_000, required=False)
     conversation_id = body.get("conversation_id")
     if conversation_id is not None and not isinstance(conversation_id, int):
@@ -170,6 +190,7 @@ def create_set():
         conversation_bee_id=conversation.bee_id if conversation else None,
         notes=notes,
         goals=goals or None,
+        revision_plan=revision_plan or None,
         ai_generated=False,
         created_at=utcnow(),
         updated_at=utcnow(),
@@ -199,6 +220,8 @@ def update_set(set_id: int):
         row.notes = _clean_text(body.get("notes"), "notes", maximum=20_000, required=False)
     if "goals" in body:
         row.goals = _clean_goals(body.get("goals")) or None
+    if "revision_plan" in body:
+        row.revision_plan = _clean_revision_plan(body.get("revision_plan")) or None
     row.updated_at = utcnow()
     db = get_db()
     db.commit()
@@ -324,6 +347,7 @@ def generate_set(set_id: int):
 
     row.notes = generated["notes"]
     row.goals = generated["goals"] or None
+    row.revision_plan = generated["revision_plan"] or None
     row.ai_generated = True
     row.updated_at = utcnow()
 

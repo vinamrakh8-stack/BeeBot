@@ -8,7 +8,7 @@ from flask import Blueprint, current_app, g, jsonify
 from sqlalchemy import func, select
 
 from api_utils import dump
-from models import Conversation, DailySummary, Fact, Todo
+from models import Conversation, DailySummary, Fact, LearningSet, Meeting, Todo
 from schemas import (
     ConversationOut,
     DailySummaryOut,
@@ -42,8 +42,29 @@ def overview():
             db, DailySummary, DailySummary.owner_id == owner_id, DailySummary.deleted.is_(False)
         ),
         "facts": _count(db, Fact, Fact.owner_id == owner_id),
-        "todos_open": _count(db, Todo, Todo.owner_id == owner_id, Todo.completed.is_(False)),
-        "todos_completed": _count(db, Todo, Todo.owner_id == owner_id, Todo.completed.is_(True)),
+        "todos_open": _count(
+            db,
+            Todo,
+            Todo.owner_id == owner_id,
+            Todo.deleted_at.is_(None),
+            Todo.completed.is_(False),
+        ),
+        "todos_completed": _count(
+            db,
+            Todo,
+            Todo.owner_id == owner_id,
+            Todo.deleted_at.is_(None),
+            Todo.completed.is_(True),
+        ),
+        "meetings": _count(
+            db, Meeting, Meeting.owner_id == owner_id, Meeting.deleted_at.is_(None)
+        ),
+        "learning_sets": _count(
+            db,
+            LearningSet,
+            LearningSet.owner_id == owner_id,
+            LearningSet.deleted_at.is_(None),
+        ),
     }
 
     today = datetime.now(timezone.utc).date()
@@ -74,14 +95,18 @@ def overview():
 
     open_todos = db.execute(
         select(Todo)
-        .where(Todo.owner_id == owner_id, Todo.completed.is_(False))
+        .where(
+            Todo.owner_id == owner_id,
+            Todo.deleted_at.is_(None),
+            Todo.completed.is_(False),
+        )
         .order_by(func.coalesce(Todo.alarm_at, Todo.bee_created_at).desc(), Todo.bee_id.desc())
         .limit(5)
     ).scalars().all()
 
     recent_facts = db.execute(
         select(Fact)
-        .where(Fact.owner_id == owner_id)
+        .where(Fact.owner_id == owner_id, Fact.deleted_at.is_(None))
         .order_by(Fact.bee_created_at.desc(), Fact.bee_id.desc())
         .limit(5)
     ).scalars().all()
