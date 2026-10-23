@@ -37,7 +37,9 @@ export default function Overview() {
     data.counts.conversations === 0 &&
     data.counts.daily_summaries === 0 &&
     data.counts.facts === 0 &&
-    data.counts.todos_open === 0;
+    data.counts.todos_open === 0 &&
+    (data.counts.meetings ?? 0) === 0 &&
+    (data.counts.learning_sets ?? 0) === 0;
 
   return (
     <div className="page-stack">
@@ -52,6 +54,8 @@ export default function Overview() {
           value={data.counts.todos_open}
           hint={`${data.counts.todos_completed} completed`}
         />
+        <StatCard label="Meetings" value={data.counts.meetings ?? 0} />
+        <StatCard label="Learning sets" value={data.counts.learning_sets ?? 0} />
       </div>
 
       {isEmpty ? (

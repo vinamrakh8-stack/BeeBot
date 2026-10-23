@@ -97,6 +97,58 @@ describe("Learning page", () => {
     expect(screen.getByText("2 items")).toBeInTheDocument();
   });
 
+  it("shows and saves the revision plan", async () => {
+    const user = userEvent.setup();
+    const detail = {
+      id: 3,
+      title: "Database indexes",
+      source_kind: "manual",
+      conversation_id: null,
+      conversation_bee_id: null,
+      notes: "Indexes trade write cost for read speed.",
+      goals: null,
+      revision_plan: ["Day 1: read the notes", "Day 2: quiz yourself"],
+      ai_generated: false,
+      created_at: "2026-02-02T03:00:00",
+      updated_at: "2026-02-02T03:00:00",
+      item_count: 0,
+      items: [],
+    };
+    const fetchSpy = installFetch((url, init) => {
+      if (url.endsWith("/api/auth/me")) return currentUserResponse();
+      if (url.endsWith("/api/learning/3") && init?.method === "PATCH") {
+        return jsonResponse(detail);
+      }
+      if (url.endsWith("/api/learning/3")) return jsonResponse(detail);
+      return jsonResponse({ error: "not_found", message: "Unexpected" }, 404);
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/learning/3"]}>
+        <AppProviders>
+          <Routes>
+            <Route path="/learning/:setId" element={<LearningDetailPage />} />
+          </Routes>
+        </AppProviders>
+      </MemoryRouter>,
+    );
+
+    const plan = await screen.findByLabelText("Revision plan (one step per line)");
+    expect(plan).toHaveValue("Day 1: read the notes\nDay 2: quiz yourself");
+
+    await user.clear(plan);
+    await user.type(plan, "Day 1: skim{enter}Day 2: practice");
+    await user.click(screen.getByRole("button", { name: "Save notes" }));
+
+    expect(await screen.findByText(/revision plan saved/i)).toBeInTheDocument();
+    const patch = fetchSpy.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith("/api/learning/3") && init?.method === "PATCH",
+    );
+    const body = JSON.parse(String(patch?.[1]?.body));
+    expect(body.revision_plan).toEqual(["Day 1: skim", "Day 2: practice"]);
+  });
+
   it("generates cards and reveals answers", async () => {
     const user = userEvent.setup();
     const detail = {

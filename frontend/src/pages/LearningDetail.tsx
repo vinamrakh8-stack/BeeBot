@@ -24,6 +24,7 @@ export default function LearningDetailPage() {
   const [busy, setBusy] = useState(false);
   const [notes, setNotes] = useState("");
   const [goals, setGoals] = useState("");
+  const [revisionPlan, setRevisionPlan] = useState("");
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
   const [kind, setKind] = useState<"flashcard" | "quiz">("flashcard");
   const [question, setQuestion] = useState("");
@@ -34,6 +35,7 @@ export default function LearningDetailPage() {
     setDetail(value);
     setNotes(value.notes ?? "");
     setGoals((value.goals ?? []).join("\n"));
+    setRevisionPlan((value.revision_plan ?? []).join("\n"));
   }, []);
 
   const load = useCallback(async () => {
@@ -81,9 +83,10 @@ export default function LearningDetailPage() {
         await api.patch<LearningDetail>(`/api/learning/${setId}`, {
           notes: notes.trim() || null,
           goals: linesToArray(goals),
+          revision_plan: linesToArray(revisionPlan),
         }),
       );
-      setNotice("Notes and goals saved.");
+      setNotice("Notes, goals, and revision plan saved.");
     } catch (caught) {
       setActionError(errorMessage(caught));
     } finally {
@@ -241,6 +244,15 @@ export default function LearningDetailPage() {
           <label className="field">
             <span>Goals (one per line)</span>
             <textarea value={goals} rows={4} onChange={(event) => setGoals(event.target.value)} />
+          </label>
+          <label className="field">
+            <span>Revision plan (one step per line)</span>
+            <textarea
+              value={revisionPlan}
+              rows={4}
+              onChange={(event) => setRevisionPlan(event.target.value)}
+              placeholder="Day 1: review the notes (20 minutes)"
+            />
           </label>
           <button type="submit" className="button primary" disabled={busy}>
             {busy ? "Saving…" : "Save notes"}

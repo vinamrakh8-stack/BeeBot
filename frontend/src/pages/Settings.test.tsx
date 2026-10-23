@@ -1,6 +1,6 @@
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import Settings from "./Settings";
 import {
   currentUserResponse,
@@ -40,6 +40,9 @@ function installSettingsFetch(overrides?: {
     if (url.endsWith("/api/bee/status")) return jsonResponse(CONNECTION);
     if (url.includes("/api/sync/runs")) return jsonResponse([]);
     if (url.endsWith("/api/settings/privacy")) return jsonResponse(PRIVACY);
+    if (url.endsWith("/api/data/export")) {
+      return jsonResponse({ format: "bee-voice-plus-export", counts: {} });
+    }
     if (url.includes("/api/bee/sync") && init?.method === "POST") {
       return overrides?.syncResponse
         ? overrides.syncResponse()
@@ -69,6 +72,36 @@ describe("Settings page", () => {
     expect(screen.getByText("reachable")).toBeInTheDocument();
     expect(screen.getByText("Test Operator")).toBeInTheDocument();
     expect(screen.getByText("No sync has run yet.")).toBeInTheDocument();
+  });
+
+  it("downloads a local data export", async () => {
+    const user = userEvent.setup();
+    const createObjectURL = vi.fn(() => "blob:export");
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", {
+      value: createObjectURL,
+      configurable: true,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      value: revokeObjectURL,
+      configurable: true,
+    });
+    // jsdom does not implement downloads; stop the anchor click at the boundary.
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+    installSettingsFetch();
+    renderWithProviders(<Settings />);
+
+    await screen.findByText("Connected account");
+    await user.click(screen.getByRole("button", { name: "Export my data" }));
+
+    expect(
+      await screen.findByText(/Export downloaded/i),
+    ).toBeInTheDocument();
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:export");
+    anchorClick.mockRestore();
   });
 
   it("reports a failed sync instead of claiming success", async () => {

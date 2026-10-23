@@ -12,7 +12,6 @@ interface Message {
   text: string;
   sources?: ContextSource[];
   clarification?: boolean;
-  grounded?: boolean;
   model?: string | null;
 }
 
@@ -22,10 +21,6 @@ const SUGGESTIONS = [
   "Summarize what I decided about the roadmap.",
 ];
 
-/** Client-side guard so a hung provider cannot spin forever. The server has
- * its own provider timeout (AI_TIMEOUT_SECONDS) that normally fires first. */
-const CHAT_TIMEOUT_MS = 60_000;
-
 export default function AIChat() {
   const [status, setStatus] = useState<AssistantStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -33,6 +28,7 @@ export default function AIChat() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [failedText, setFailedText] = useState<string | null>(null);
   const nextId = useRef(1);
   const endRef = useRef<HTMLDivElement | null>(null);
 
@@ -55,15 +51,20 @@ export default function AIChat() {
     endRef.current?.scrollIntoView?.({ block: "end" });
   }, [messages, sending]);
 
-  async function send(text: string) {
+  async function send(text: string, options: { appendUser?: boolean } = {}) {
     const clean = text.trim();
     if (!clean || sending) return;
     setError(null);
+    setFailedText(null);
     setSending(true);
-    setMessages((current) => [
-      ...current,
-      { id: nextId.current++, role: "user", text: clean },
-    ]);
+    // A retry reuses the question already shown in the log instead of adding a
+    // duplicate bubble and instead of sending the (now cleared) input box.
+    if (options.appendUser !== false) {
+      setMessages((current) => [
+        ...current,
+        { id: nextId.current++, role: "user", text: clean },
+      ]);
+    }
     setInput("");
 
     try {
@@ -83,6 +84,7 @@ export default function AIChat() {
       ]);
     } catch (caught) {
       setError(errorMessage(caught));
+      setFailedText(clean);
     } finally {
       setSending(false);
     }
@@ -160,7 +162,16 @@ export default function AIChat() {
           <div ref={endRef} />
         </div>
 
-        {error ? <ErrorBanner message={error} onRetry={() => void send(input)} /> : null}
+        {error ? (
+          <ErrorBanner
+            message={error}
+            onRetry={
+              failedText
+                ? () => void send(failedText, { appendUser: false })
+                : undefined
+            }
+          />
+        ) : null}
 
         <form className="chat-form" onSubmit={onSubmit}>
           <label className="field grow">

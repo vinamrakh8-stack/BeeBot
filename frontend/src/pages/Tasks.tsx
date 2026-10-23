@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { api, errorMessage } from "../api";
 import Pagination from "../components/Pagination";
 import { EmptyState, ErrorBanner, LoadingBlock, Spinner } from "../components/States";
@@ -249,8 +250,13 @@ export default function Tasks() {
       await api.post<Todo>("/api/tasks", {
         text: candidate.text,
         due_at: candidate.due_at ?? null,
-        source_conversation_id: candidate.source_conversation_id ?? candidateSource,
+        source_bee_id: candidate.conversation_bee_id ?? undefined,
+        source_conversation_id:
+          candidate.conversation_bee_id == null
+            ? candidate.source_conversation_id ?? candidateSource ?? undefined
+            : undefined,
         source_excerpt: candidate.excerpt ?? undefined,
+        origin: "ai",
       });
       setCandidates((current) => current.filter((item) => item.text !== candidate.text));
       setNotice("Task saved locally. It is not sent to Bee.");
@@ -500,6 +506,14 @@ export default function Tasks() {
                     <span className="muted small">
                       Created {formatDateTime(todo.bee_created_at ?? todo.created_at)}
                     </span>
+                    {todo.source_conversation_bee_id ? (
+                      <Link
+                        to={`/conversations/${todo.source_conversation_bee_id}`}
+                        className="small"
+                      >
+                        Source conversation
+                      </Link>
+                    ) : null}
                     {editingId !== todo.bee_id ? (
                       <span className="edge-actions">
                         <button type="button" className="button ghost small" onClick={() => startEdit(todo)}>

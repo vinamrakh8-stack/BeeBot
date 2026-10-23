@@ -69,11 +69,10 @@ export const api = {
   get<T>(path: string): Promise<T> {
     return request<T>(path);
   },
-  post<T>(path: string, body?: unknown, options?: { signal?: AbortSignal }): Promise<T> {
+  post<T>(path: string, body?: unknown): Promise<T> {
     return request<T>(path, {
       method: "POST",
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: options?.signal,
     });
   },
   patch<T>(path: string, body: unknown): Promise<T> {

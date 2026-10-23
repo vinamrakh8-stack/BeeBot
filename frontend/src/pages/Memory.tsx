@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { api, errorMessage } from "../api";
 import Pagination from "../components/Pagination";
 import { EmptyState, ErrorBanner, LoadingBlock, Spinner } from "../components/States";
@@ -179,9 +180,14 @@ export default function Memory() {
       await api.post<Fact>("/api/memories", {
         text: candidate.text,
         tags: candidate.tags ?? [],
-        source_conversation_id: candidate.source_conversation_id ?? candidateSource,
+        source_bee_id: candidate.conversation_bee_id ?? undefined,
+        source_conversation_id:
+          candidate.conversation_bee_id == null
+            ? candidate.source_conversation_id ?? candidateSource ?? undefined
+            : undefined,
         source_excerpt: candidate.excerpt ?? undefined,
         confirmed: false,
+        origin: "ai",
       });
       setCandidates((current) => current.filter((item) => item.text !== candidate.text));
       setNotice("Candidate saved as an unconfirmed memory. Nothing is sent to Bee.");
@@ -425,6 +431,13 @@ export default function Memory() {
                     ) : null}
                     {fact.source_excerpt ? (
                       <p className="muted small">Source excerpt: “{fact.source_excerpt}”</p>
+                    ) : null}
+                    {fact.source_conversation_bee_id ? (
+                      <p className="small">
+                        <Link to={`/conversations/${fact.source_conversation_bee_id}`}>
+                          Source conversation
+                        </Link>
+                      </p>
                     ) : null}
                     <div className="card-actions">
                       <button type="button" className="button ghost small" onClick={() => startEdit(fact)}>

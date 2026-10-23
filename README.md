@@ -1,55 +1,77 @@
-# Bee Voice+ — Phase 1
+# Bee Voice+ — Phase 2
 
-A Flask + React dashboard over the **official Bee developer API**. It signs in
-with its own operator account, syncs real Bee data server-side, and shows
-conversations, daily summaries, personal memories, tasks, search and activity.
+A Flask + React dashboard over the **official Bee developer API**, extended with
+a grounded AI assistant, voice interaction, personal memory and task management,
+meetings, learning, insights, and a knowledge graph.
 
-No endpoints are invented, no connection is simulated, and no mock data ships in
-production. Verified capabilities and limitations:
-[`docs/bee_capability_matrix.md`](docs/bee_capability_matrix.md). Architecture:
-[`docs/architecture.md`](docs/architecture.md).
+Phase 1 behaviour is preserved: the same app, dashboard, database, auth system,
+and Bee sync. Phase 2 adds features and tables; it does not replace them.
 
-## Build and verification history
+* Implementation plan: [`docs/phase2_implementation_plan.md`](docs/phase2_implementation_plan.md)
+* Implementation report (results, gaps, limitations):
+  [`docs/phase2_implementation_report.md`](docs/phase2_implementation_report.md)
+* Architecture: [`docs/architecture.md`](docs/architecture.md)
+* Bee capability matrix: [`docs/bee_capability_matrix.md`](docs/bee_capability_matrix.md)
 
-The Phase 1 application was already present when this verification pass began.
-This pass inspected it end to end, re-read the official Bee documentation,
-added the missing Vitest + React Testing Library suite, added a
-`/api/connection/status` alias, upgraded React Router to a patched release,
-applied the Alembic migration to a fresh database, started the real Flask
-server, and recorded the actual results below. The original author noted that
-an unused `venv/` was the only pre-existing artefact.
+No Bee endpoint is invented, no connection is simulated, and no mock data ships
+in production. Verified capabilities and limitations are stated in the UI and in
+the capability matrix.
 
 ## Features
 
-* **Overview** — connection state, last successful sync, counts, recent activity.
+### Phase 1 (preserved)
+
+* **Overview** — connection state, sync status, counts, recent activity.
 * **Conversations** — paginated list, text filter, detail with transcript,
   location, links, and a visible "stale" note when Bee is unreachable.
 * **Daily summaries** — date-ordered recaps with full/email/calendar sections.
 * **Personal memory** — Bee facts with confirmation state and tags.
-* **Tasks** — Bee tasks only; completion is written to Bee first, then mirrored.
+* **Tasks** — Bee tasks; completion is written to Bee first, then mirrored.
 * **Search** — Bee keyword (BM25) and semantic modes, with the searched scope
   stated in the UI.
 * **Activity** — merged timeline from synced records.
-* **Settings** — Bee connection, sync history, privacy summary, local data
-  deletion.
+* **Settings** — Bee connection, sync history, privacy summary, local deletion.
+
+### Phase 2 (added)
+
+* **AI chat** — answers only from owner-scoped retrieved records, with `[S#]`
+  citations. No evidence returns a clarification and never calls the provider.
+* **Voice assistant** — push-to-talk, browser speech recognition with a
+  MediaRecorder + server-STT fallback, browser TTS or server TTS, and
+  play/pause/resume/stop/mute. Wake word is reported unavailable (see limits).
+* **Personal memory** — local create/edit/delete, tags, confirmation, AI
+  extraction candidates, source excerpts and source-conversation links.
+* **Smart tasks** — local tasks with due dates, postponing, AI extraction,
+  duplicate detection, provenance badges, source links, and opt-in foreground
+  browser reminders.
+* **Meetings** — create from an authorized conversation or manually; generate
+  summaries, key points, decisions, and action items from stored source text.
+* **Learning coach** — notes, goals, revision plan, AI flashcards/quizzes,
+  manual cards, and review/mastered progress. Regeneration preserves manual cards.
+* **Insights** — deterministic day/week counts and trends, decisions and
+  commitments. No productivity/health scores and no AI.
+* **Knowledge graph** — derived nodes/edges plus user-confirmed stored edges.
+* **Data controls** — JSON export of every local record, Phase 2-aware privacy
+  counts, and full local deletion.
 
 ## Stack
 
 | Layer | Choice |
 | --- | --- |
-| Frontend | HTML5, CSS3, JavaScript (ES2022), React 18, React Router 7, Vite 6 |
-| Backend | Python 3.11+, Flask 3, Blueprints, SQLAlchemy 2, Alembic |
-| Database | SQLite (default local, zero setup) or MySQL 8 (recommended for deployment) via `DATABASE_URL` |
+| Frontend | HTML5, CSS3, ES2022, React 18, React Router 7, Vite 6, TypeScript |
+| Backend | Python 3.11+, Flask 3, Blueprints, SQLAlchemy 2, Alembic, Pydantic 2 |
+| Database | SQLite (default local) or MySQL 8 via `DATABASE_URL` |
 | Bee integration | `httpx` client for documented `/v1/*` endpoints |
+| AI integration | Server-side OpenAI-compatible HTTP API (`httpx`, no SDK) |
+| Testing | pytest, Vitest, React Testing Library, jsdom |
 
 ## Setup (Windows PowerShell)
 
-Tested interpreter target: Python 3.11–3.14 (the checked-in `venv/` is 3.14; the
-requirements use version ranges so pip can pick wheels for it). Node 22.12+ for
-the frontend toolchain (React Router 7 and Vitest 5 require it).
+Tested interpreter: Python 3.14.3 (the checked-in `venv`); the requirements use
+version ranges so Python 3.11+ works. Node 24.19.0 and npm 12.2.1 were used.
 
 ```powershell
-# 1. From the repository root (the `web/` folder)
+# 1. From the repository root
 py -3 -m venv venv
 .\venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
@@ -60,11 +82,11 @@ pip install -r .\backend\requirements.txt
 # 2. Environment
 Copy-Item .env.example .env
 # Edit .env:
-#   SECRET_KEY       -> python -c "import secrets; print(secrets.token_urlsafe(48))"
-#   DATABASE_URL     -> sqlite:///./bee_voice.db (default), or your MySQL 8 URL
-#   APP_PASSWORD_HASH-> generated below
-#   DEMO_PASSWORD    -> optional development demo shown on the sign-in page
-#   BEE_TOKEN        -> from Bee CLI (below)
+#   SECRET_KEY        -> python -c "import secrets; print(secrets.token_urlsafe(48))"
+#   DATABASE_URL      -> sqlite:///./bee_voice.db (default) or your MySQL 8 URL
+#   APP_PASSWORD_HASH -> generated below
+#   BEE_TOKEN         -> from Bee CLI, or use BEE_API_MODE=proxy
+#   AI_API_KEY        -> optional; AI features stay disabled without it
 ```
 
 ```powershell
@@ -75,50 +97,31 @@ python app.py hash-password
 ```
 
 ```powershell
-# 4. Database schema (Alembic is authoritative) — run inside .\backend
+# 4. Database schema (Alembic is authoritative)
 cd .\backend
 alembic upgrade head
-# quick local alternative with SQLite:
-# python app.py init-db
+# head is 0003_learning_revision_plan
 ```
 
 ```powershell
-# 5. Bee credentials
+# 5. Bee credentials (choose one)
 npm install -g @beeai/cli
 bee login
 bee status
 
 # EITHER copy the token into .env -> BEE_TOKEN=...
-# (file fallback if the OS keychain is unavailable)
-$env:BEE_FORCE_FILE_STORE = "1"
-bee login
-Get-Content "$env:USERPROFILE\.bee\token-prod"
-```
-
-Alternatively run the documented local proxy and set `BEE_API_MODE=proxy`:
-
-```powershell
-bee login
-bee proxy            # serves 127.0.0.1:8787, unauthenticated, local only
+# OR run the documented local proxy and set BEE_API_MODE=proxy:
+bee proxy            # serves 127.0.0.1:8787, local only
 ```
 
 ```powershell
-# 6. Run the whole app with one command (from the repository root)
-python app.py        # http://127.0.0.1:5000
-# equivalent: cd .\backend ; python app.py
-```
-
-`app.py` exists twice on purpose: `web/app.py` is the launcher you run from the
-project folder (`web/`), and `backend/app.py` is the Flask app it loads. Both
-take the same subcommands, and both serve the API and the built React bundle
-from one process.
-
-`app.py` serves the API **and** the built React app. Build the frontend first:
-
-```powershell
+# 6. Build and run the whole app from the repository root
 cd .\frontend
 npm install
 npm run build
+
+cd ..
+python app.py        # http://127.0.0.1:5000
 ```
 
 For frontend development with hot reload, run Vite separately (it proxies `/api`
@@ -126,211 +129,217 @@ to Flask on port 5000):
 
 ```powershell
 cd .\frontend
-npm install
 npm run dev          # http://localhost:5173
 ```
 
 Other commands:
 
 ```powershell
-python app.py init-db        # create tables without Alembic
+python app.py init-db        # create tables without Alembic (development only)
 python app.py sync           # incremental sync (cron / Task Scheduler)
 python app.py sync --full    # full re-sync
 flask --app app sync         # same, through the Flask CLI
 ```
 
+## AI and voice configuration
+
+All AI configuration is server-side; the browser receives status only.
+
+```dotenv
+AI_PROVIDER=openai_compatible
+AI_BASE_URL=https://api.openai.com/v1
+AI_API_KEY=
+AI_MODEL=gpt-4o-mini
+AI_STT_MODEL=whisper-1
+AI_TTS_MODEL=tts-1
+AI_TTS_VOICE=alloy
+AI_RATE_LIMIT_PER_MINUTE=20
+AI_MAX_CONTEXT_SOURCES=8
+AI_MAX_AUDIO_BYTES=10485760
+WAKE_WORD_PHRASE=Hey Bee
+WAKE_WORD_ENGINE=disabled
+```
+
+* Without `AI_API_KEY` (or with `AI_PROVIDER=disabled`), AI actions return HTTP
+  `503 ai_not_configured` and explain setup. Deterministic features still work.
+* A local OpenAI-compatible server can be used by setting `AI_BASE_URL` to
+  `http://127.0.0.1:11434/v1` and leaving the key empty.
+* Speech recognition and synthesis use browser APIs first. Server STT/TTS are
+  fallbacks and require the corresponding models.
+* Wake word is **disabled by design**: no local engine is bundled, and the app
+  does not stream continuous microphone audio to a cloud service to detect a
+  phrase. Push-to-talk is the reliable web interaction.
+
 ## First run checklist
 
 1. Sign in with `APP_USERNAME` and the password you hashed. In development the
-   sign-in page also shows a **Demo account** box (`operator` /
-   `DEMO_PASSWORD`, `123456` in `.env.example`); the **Use demo account** button
-   fills the form. Set `DEMO_LOGIN_ENABLED=false` to hide it — it is never
+   sign-in page may also show a demo account (`DEMO_PASSWORD`); it is never
    exposed when `APP_ENV=production`.
 2. Open **Settings**: `configured` and `reachable` must both be green, and the
    connected account must be yours.
-3. Press **Sync now** and check the run table for per-entity counts.
-4. If anything fails, the exact Bee error is shown — nothing is hidden.
+3. Press **Sync now** and inspect the per-entity counts and any error.
+4. Open **AI chat** and check the provider badge. Without a key, the setup
+   instructions are shown; nothing is faked.
+5. Try **Voice assistant**: allow microphone access, use push-to-talk, and
+   confirm transcription, answer, and playback.
+6. Accept one memory/task candidate and confirm the `AI-suggested` badge and
+   source-conversation link.
+7. Export your data and inspect the JSON; then try the local-deletion flow on a
+   test database.
 
-## Bee API routes used
+## App API and Bee endpoints
+
+Bee endpoints used (unchanged from Phase 1):
 
 | App route | Bee endpoint |
 | --- | --- |
-| `GET /api/bee/status` (alias `GET /api/connection/status`) | `GET /v1/me` |
+| `GET /api/bee/status` | `GET /v1/me` |
 | `POST /api/bee/sync` | `/v1/conversations`, `/v1/daily`, `/v1/facts`, `/v1/todos`, `/v1/changes` |
 | `GET /api/conversations[/id]` | `GET /v1/conversations[/id]` |
 | `GET /api/summaries[/id]` | `GET /v1/daily[/id]` |
 | `GET /api/memories` | `GET /v1/facts` |
 | `GET /api/tasks` | `GET /v1/todos` |
-| `PATCH /api/tasks/id` | `PUT /v1/todos/id` |
+| `PATCH /api/tasks/id` (completion) | `PUT /v1/todos/id` |
 | `GET /api/search` | `POST /v1/search/conversations[/neural]` |
 | `GET /api/stream` | `GET /v1/stream` (SSE proxy) |
-| `GET /api/settings/privacy`, `DELETE /api/data` | local data only |
+
+Application endpoints added in Phase 2 (not Bee endpoints):
+
+* Assistant: `GET /api/assistant/status`, `POST /api/assistant/chat`,
+  `POST /api/assistant/transcribe`, `POST /api/assistant/speak`.
+* Memory/task local CRUD and extraction: `/api/memories`, `/api/tasks`.
+* Meetings: `/api/meetings`, `/api/meetings/<id>`, `/api/meetings/<id>/generate`.
+* Learning: `/api/learning`, items, and `/api/learning/<id>/generate`.
+* Insights: `GET /api/insights?period=day|week`.
+* Knowledge graph: `/api/knowledge-graph`, `/api/knowledge-graph/edges`.
+* Local search: `GET /api/search/local`.
+* Data controls: `GET /api/data/export`, `GET /api/settings/privacy`,
+  `DELETE /api/data`.
+
+All are authenticated and owner-scoped; AI-backed endpoints are rate-limited.
 
 ## Tests
 
 ```powershell
 cd .\backend
-pytest
-```
+..\venv\Scripts\python.exe -m pytest -o addopts="" -q
 
-Coverage:
-
-* `test_auth.py` — login, wrong password, unknown user, tampered cookie, logout,
-  unconfigured operator.
-* `test_sync.py` — full-sync persistence, idempotent re-runs, cursor pagination,
-  failure keeps the previous cursor.
-* `test_sync_incremental.py` — change-feed fetch, 7-day cursor fallback,
-  deletion mirroring, 429 retry.
-* `test_access_control.py` — owner scoping and cross-origin mutation blocking.
-* `test_bee_client.py` — 401/403 (including `test_user_required` → capability
-  error)/404/`cursor_too_old` mapping, retry exhaustion, pagination, search body.
-* `test_api.py` — search passthrough, task write-through and failure, connection
-  status, overview, privacy/deletion, health.
-
-Bee is replaced by an in-memory HTTP transport in `tests/fake_bee.py` that
-mirrors the documented shapes. It is used **only** by tests.
-
-Frontend tests (Vitest + React Testing Library, jsdom):
-
-```powershell
-cd .\frontend
-npm install
-npm test               # 52 tests across 13 files
+cd ..\frontend
+npm test -- --run
 npm run typecheck
 npm run build
-npm run test:coverage  # optional: HTML report in coverage/
 ```
 
-* `src/components/States.test.tsx` — loading/status, error alert + retry, empty state.
-* `src/api.test.ts` — structured errors, nested `detail`, network failure, 204,
-  401 broadcast, JSON request body.
-* `src/App.test.tsx` — unauthenticated redirect, authenticated shell/nav,
-  failed top-bar sync reporting.
-* `src/pages/Tasks.test.tsx` — loading, empty, error + retry, write-through
-  `PATCH`, failed write keeps the row unchanged.
-* `src/pages/Overview.test.tsx` — loading, empty, connection error.
-* `src/pages/Search.test.tsx` — loading, empty, upstream error, result links.
-* `src/pages/Conversations.test.tsx` — loading, empty, list links, error + retry.
-* `src/pages/ConversationDetail.test.tsx` — loading, error + back link,
-  summary/location/links/transcript, stale-cache warning.
-* `src/pages/Daily.test.tsx` — loading, empty, error + retry, expandable recap.
-* `src/pages/Memory.test.tsx` — loading, empty, error + retry, tags.
-* `src/pages/Activity.test.tsx` — loading, empty, error + retry, timeline links.
-* `src/pages/Settings.test.tsx` — loading, verified connection/account, failed
-  sync is reported and never shown as success.
-* `src/pages/Login.test.tsx` — disabled submit, server authentication error,
-  development demo box + fill, hidden when disabled.
+Measured on Windows on 2026-10-23 with Python 3.14.3, Node 24.19.0, npm 12.2.1:
 
-## Verification status (actual results)
+| Check | Result |
+| --- | --- |
+| Backend pytest | **85 passed** in 95.39 s |
+| Frontend Vitest | **72 passed**, 18 files, 3.81 s |
+| `npm run typecheck` | exit 0, no diagnostics |
+| `npm run build` | exit 0, `frontend/dist/` written |
+| `alembic upgrade head` on fresh SQLite | exit 0, head `0003_learning_revision_plan`, 12 app tables + `alembic_version` |
 
-Measured on Windows on 2026-10-23 with Python 3.14.3, Node 24.19.0 and npm
-12.2.1:
+Backend coverage includes auth/session security, owner scoping, CSRF, Bee error
+mapping, retries, idempotent full/incremental sync, tombstones, local
+memory/task/meeting/learning/insight/graph behaviour, AI-origin provenance,
+source-id mapping, export/purge, and migrations.
 
-| Check | Command | Result |
-| --- | --- | --- |
-| Backend tests | `python -m pytest -o addopts="" -q` in `backend/` | **44 passed** |
-| Frontend tests | `npm test` in `frontend/` | **54 passed, 13 files** |
-| Frontend coverage | `npm run test:coverage` | **79.56% statements, 82.15% lines** |
-| TypeScript | `npm run typecheck` | exit 0 |
-| Production build | `npm run build` | exit 0, `frontend/dist/` written |
-| Dependency audit | `npm audit` in `frontend/` | **0 vulnerabilities** |
-| Alembic migration | `alembic upgrade head` on a fresh SQLite DB | exit 0, 7 tables + `alembic_version` at `0001_initial` |
-| Live server smoke test | `python app.py` + real HTTP calls | see below |
+Frontend coverage includes the auth-gated router, every page's
+loading/empty/error/retry states, Bee task write-through, AI chat and retry,
+voice fallbacks and denied/unsupported APIs, accepted-candidate provenance,
+source links, revision plans, data export, stale-cache fallback, and failed-sync
+reporting.
 
-The smoke test ran the real Flask app against a temporary SQLite database with
-**no** Bee credentials. Results:
+`FakeBee` and `FakeAI` are in-memory test doubles used **only** under
+`backend/tests/`. No test calls the real Bee API or a real AI provider.
 
-* `GET /api/health` → `200 {"status":"ok","bee_configured":false}`
-* `GET /api/auth/me` without a session → `401`
-* `POST /api/auth/login` → `200` with the operator user
-* `GET /api/auth/demo` → `200` demo account in development; login with it
-  returns `200`, and the previous password returns `401` after a change
-* `GET /api/connection/status` → `configured:false, reachable:false` plus the
-  exact reason (`BEE_TOKEN`/`bee proxy` missing)
-* `GET /api/overview`, `GET /api/tasks`, `GET /api/sync/status` → empty state,
-  no fabricated counts
-* `POST /api/bee/sync` → recorded `status:"failed"` with the real error, never
-  `"success"`
-* `GET /` and a deep link (`/conversations/123`) → `200` with the built React app
-* unknown `/api/*` → JSON `404`; cross-origin `DELETE /api/data` → `403`
+### Automated vs manual
 
-**Still unverified — needs your account and device:**
+**Automated here:** API/CRUD/generation logic, auth, ownership, migrations on
+SQLite, and React interaction with a mocked `fetch`.
 
-* No live Bee account or hardware was available here, so **no request was made
-  to the real Bee API**. `/v1/me`, sync, transcripts, search and SSE were
-  exercised only against the in-memory test transport in
-  `backend/tests/fake_bee.py`.
-* MySQL 8 was not available, so the Alembic migration was applied to SQLite
-  only; it has not been run against a live MySQL server.
-* Bee rate limits and plan/retention behaviour cannot be confirmed without a
-  real account.
+**Manual only:** a real Bee account/device, a real AI provider, microphone and
+speaker permission/playback, OS/Bluetooth audio routing, browser-specific speech
+engines, and MySQL 8. See the report for the full manual checklist.
 
-Anything the app cannot verify is shown in the UI as unreachable or not
-configured; it is never displayed as connected.
+## Verification status
+
+* Phase 1 features and tests remain green (see the report's regression section).
+* No live Bee account/device was available in this environment, so live sync,
+  transcripts, SSE and Bee rate limits were not verified.
+* No real AI provider was available, so provider latency/quality and live error
+  shapes were not verified.
+* MySQL 8 was not available; Alembic was applied to SQLite only.
+* The app never displays a connection or a successful sync it did not observe.
 
 ## Security notes
 
-* Bee credentials stay in server environment variables (or the local proxy);
-  they are never sent to the browser or stored in the database.
+* Bee and AI credentials stay in server environment variables (or the local
+  proxy) and are never sent to the browser or stored in the database.
 * Session cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
 * State-changing `/api/*` requests require a same-origin `Origin`/`Referer`.
 * Searches and lookups use parameterised SQLAlchemy queries.
+* AI rate limiting and upload/text limits are enforced server-side.
 * `BEE_ALLOW_MOCK=true` is rejected when `APP_ENV=production`.
-* The sign-in demo account is development-only: `/api/auth/demo` returns
-  `enabled:false` when `APP_ENV=production`, and `DEMO_PASSWORD` is intentionally
-  weak. Set `DEMO_LOGIN_ENABLED=false` for any shared deployment.
-* `npm audit` reports **0 vulnerabilities** (React Router 7 + Vitest 5).
-* `DELETE /api/data` removes only local copies; Bee is untouched.
-* To disconnect completely: remove `BEE_TOKEN` (or stop `bee proxy`) and restart.
+* The development demo account is never exposed in production.
+* `GET /api/data/export` is authenticated and owner-scoped; treat the downloaded
+  JSON as sensitive personal data.
+* `DELETE /api/data` removes only local records; Bee is untouched.
 
 ## Deployment
 
 1. `pip install -r backend/requirements.txt` and `alembic upgrade head`.
 2. `npm run build` in `frontend/`.
-3. Run `python app.py` behind HTTPS (`FLASK_HOST=127.0.0.1`, a reverse proxy such
-   as nginx/IIS handles TLS), with `APP_ENV=production`, a strong `SECRET_KEY`,
-   `DEMO_LOGIN_ENABLED=false`, and `CORS_ORIGINS` set to the public origin.
-4. Store `BEE_TOKEN` in a secret manager, not in the image.
+3. Run `python app.py` behind HTTPS with `APP_ENV=production`, a strong
+   `SECRET_KEY`, `DEMO_LOGIN_ENABLED=false`, and `CORS_ORIGINS` set to the public
+   origin.
+4. Store `BEE_TOKEN` (and `AI_API_KEY` if used) in a secret manager, not the
+   image.
 5. Schedule `python app.py sync` at least daily so the 7-day cursor never ages
    out.
-6. Run a single worker, or replace the in-process sync lock with a database
-   advisory lock before scaling horizontally.
+6. Run a single worker, or replace the in-process sync lock and AI rate limiter
+   with shared infrastructure before scaling horizontally.
 
-## Required Bee access, credentials and permissions
+## Required Bee access and permissions
 
-Bee's documented API does not expose granular OAuth scopes: a valid account
-token grants access to that account's `/v1/*` data. This app applies least
-privilege by keeping the token server-side, reading only the entities Phase 1
-needs, and making exactly one write path — marking a Bee todo complete via
-`PUT /v1/todos/:id`.
+Bee's documented API has no granular OAuth scopes: a valid account token grants
+access to that account's `/v1/*` data. This app keeps the token server-side,
+reads only the entities it needs, and makes exactly one Bee write path — marking
+a Bee todo complete via `PUT /v1/todos/:id`. Local memories, tasks, meetings,
+learning sets, and graph edges are stored only in this app's database.
 
 | Requirement | Why | Where it goes |
 | --- | --- | --- |
 | Bee iOS app with Developer Mode unlocked (tap Version 5×) | Bee requires this before `bee login` issues a token | Device (manual step) |
 | `BEE_TOKEN` from `bee login` / `bee status` | Bearer auth to the public HTTPS endpoint | Server env / secret manager |
-| **or** a running `bee proxy` + `BEE_API_MODE=proxy` | Local unauthenticated proxy that holds auth for you | Local machine only |
+| **or** a running `bee proxy` + `BEE_API_MODE=proxy` | Local proxy that holds auth for you | Local machine only |
 | Access to your own Bee account data | Conversations, daily summaries, facts, todos | Bee account |
-| Bee test-user enrolment | Only needed for Threads, which Phase 1 does not use | Not required |
 | `APP_USERNAME` + `APP_PASSWORD_HASH` | Dashboard operator login (separate from Bee) | Server env |
-| `DEMO_PASSWORD` + `DEMO_LOGIN_ENABLED` | Development-only demo account shown on the sign-in page; never exposed in production | Server env |
 | `SECRET_KEY` | Flask session signing | Server env |
 | `DATABASE_URL` | SQLite (local) or MySQL 8 (deploy) | Server env |
+| `AI_API_KEY` + `AI_BASE_URL` + `AI_MODEL` | Optional AI chat/extraction/meeting/learning | Server env |
+| `AI_STT_MODEL`, `AI_TTS_MODEL`, `AI_TTS_VOICE` | Optional server speech fallbacks | Server env |
 | `CORS_ORIGINS` | Only when the React dev server is on another origin | Server env |
-
-No Bee permission beyond the account token is requested. No webhook, contact,
-or device-firmware scope is used because Bee documents none.
 
 ## Known limitations
 
-* **Threads** are test-user-only (`403 test_user_required`); not implemented.
-* **No people/contacts feature** — Bee has no such endpoint.
-* **Journals, insights, locations, photos, todo suggestions, today brief** are
-  documented but not surfaced in phase 1 (see the capability matrix).
-* **Bee rate limits are undocumented**; the client backs off but very large
-  accounts may need smaller `BEE_SYNC_PAGE_SIZE`/`BEE_SYNC_MAX_PAGES`.
-* **Transcripts load on demand**; with Bee offline you get the cached copy
-  flagged `stale`.
-* **`/v1/changes` deletion semantics are not fully documented**; confirmed 404s
-  are mirrored and full syncs correct drift.
-* **SSE holds a Flask worker thread** per open stream; fine for a demo, note it
-  for production scaling.
+* **Live Bee not validated here** — sync, transcripts, SSE and rate limits need a
+  real account and device.
+* **Live AI not validated here** — prompts and errors were exercised with a fake
+  client only.
+* **Wake word disabled** — no local engine is bundled; continuous cloud audio
+  detection is intentionally not used. Push-to-talk is the supported flow.
+* **Keyword retrieval only** — embeddings/vector search require a provider/store
+  that is not configured.
+* **No Bee device control** — Bee documents no speaker, wake-word, recording, or
+  device-command API.
+* **Foreground reminders only** — browser notifications fire while the dashboard
+  tab is open and permission is granted; there is no push service.
+* **MySQL untested here** — migrations use batch mode but were applied to SQLite
+  only in this environment.
+* **Single-process assumptions** — sync lock and AI rate limiter are in-process.
+* **Export is plain JSON** — protected by the operator session, not encrypted or
+  password-protected.
+* **Threads** are test-user-only (`403 test_user_required`) and are not built.
+* **No people/contacts page** — Bee exposes no such endpoint.

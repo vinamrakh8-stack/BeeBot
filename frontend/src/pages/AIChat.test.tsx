@@ -105,6 +105,54 @@ describe("AI chat page", () => {
     expect(screen.getByText(/Ask about your own records/i)).toBeInTheDocument();
   });
 
+  it("retries the failed question instead of sending an empty input", async () => {
+    const user = userEvent.setup();
+    let attempts = 0;
+    const fetchSpy = installFetch((url, init) => {
+      if (url.endsWith("/api/auth/me")) return currentUserResponse();
+      if (url.endsWith("/api/assistant/status")) return jsonResponse(STATUS);
+      if (url.endsWith("/api/assistant/chat") && init?.method === "POST") {
+        attempts += 1;
+        if (attempts === 1) {
+          return jsonResponse(
+            { error: "ai_unreachable", message: "The AI provider is unreachable." },
+            502,
+          );
+        }
+        return jsonResponse({
+          answer: "You asked about the roadmap [S1].",
+          grounded: true,
+          clarification_needed: false,
+          model: "gpt-4o-mini",
+          generated_at: "2026-02-02T03:00:00Z",
+          sources: [],
+        });
+      }
+      return jsonResponse({ error: "not_found", message: "Unexpected" }, 404);
+    });
+
+    renderWithRouter(<AIChat />);
+    await screen.findByText(/model: gpt-4o-mini/i);
+    await user.type(screen.getByRole("textbox"), "roadmap?");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await screen.findByRole("button", { name: "Try again" });
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(
+      await screen.findByText("You asked about the roadmap [S1]."),
+    ).toBeInTheDocument();
+
+    const posts = fetchSpy.mock.calls.filter(
+      ([url, init]) =>
+        String(url).endsWith("/api/assistant/chat") && init?.method === "POST",
+    );
+    expect(posts).toHaveLength(2);
+    expect(posts[1][1]?.body).toBe(JSON.stringify({ message: "roadmap?" }));
+    // The retry reuses the existing user bubble rather than duplicating it.
+    expect(screen.getAllByText("roadmap?")).toHaveLength(1);
+  });
+
   it("surfaces a provider failure instead of showing a fake answer", async () => {
     const user = userEvent.setup();
     installFetch((url, init) => {

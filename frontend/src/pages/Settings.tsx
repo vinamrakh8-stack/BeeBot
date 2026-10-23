@@ -17,6 +17,7 @@ export default function Settings() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -81,6 +82,31 @@ export default function Settings() {
       setActionError(errorMessage(caught));
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function exportData() {
+    setExporting(true);
+    setActionError(null);
+    setNotice(null);
+    try {
+      const payload = await api.get<Record<string, unknown>>("/api/data/export");
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `bee-voice-plus-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setNotice("Export downloaded. It contains only this account's local records.");
+    } catch (caught) {
+      setActionError(errorMessage(caught));
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -344,11 +370,19 @@ export default function Settings() {
             <div className="privacy-actions">
               <button
                 type="button"
+                className="button secondary"
+                onClick={() => void exportData()}
+                disabled={exporting}
+              >
+                {exporting ? "Exporting…" : "Export my data"}
+              </button>
+              <button
+                type="button"
                 className="button danger"
                 onClick={() => void deleteData()}
                 disabled={deleting}
               >
-                {deleting ? "Deleting…" : "Delete synced data"}
+                {deleting ? "Deleting…" : "Delete local data"}
               </button>
               <span className="muted small">
                 To disconnect Bee entirely, remove <code>BEE_TOKEN</code> from the server

@@ -80,6 +80,7 @@ export interface Fact {
   origin?: string;
   source_kind?: string | null;
   source_conversation_id?: number | null;
+  source_conversation_bee_id?: number | null;
   source_excerpt?: string | null;
   ai_generated?: boolean;
   created_at?: string | null;
@@ -96,6 +97,7 @@ export interface Todo {
   alarm_at?: string | null;
   origin?: string;
   source_conversation_id?: number | null;
+  source_conversation_bee_id?: number | null;
   source_excerpt?: string | null;
   due_at?: string | null;
   postponed_until?: string | null;
@@ -267,6 +269,7 @@ export interface LearningSet {
   conversation_bee_id?: number | null;
   notes?: string | null;
   goals?: string[] | null;
+  revision_plan?: string[] | null;
   ai_generated: boolean;
   created_at: string;
   updated_at: string;
@@ -352,6 +355,7 @@ export interface ExtractCandidate {
   source_conversation_id?: number;
   conversation_bee_id?: number;
   dedupe_key?: string;
+  origin?: string;
   due_at?: string | null;
   duplicate?: boolean;
 }
